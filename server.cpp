@@ -3,6 +3,7 @@
 #include <QNetworkInterface>
 #include <QNetworkAddressEntry>
 #include <QString>
+#include <QThread>
 
 Server::Server(QWidget *parent)
     : QWidget(parent)
@@ -11,15 +12,25 @@ Server::Server(QWidget *parent)
     ui->setupUi(this);
 
 
+    // 在函数内部创建 QSettings 对象并使用
+    QSettings settings("MyCompany", "MyApp");
+    QString savedAdddress = settings.value("address").toString();
+    QString savedPort = settings.value("port").toString();
+
+    if (!savedAdddress.isEmpty()) {
+        ui->lineEdit->setText(savedAdddress);
+    }
+    if (!savedPort.isEmpty()) {
+        ui->lineEdit_2->setText(savedPort);
+    }
+
+
     //新的连接
     tcpServer = new QTcpServer(this);
 
     this->setWindowTitle("服务端");
 
-    //listen(QHostAddress::Any, 12345); // Listen to any address on port 12345
-    tcpServer->listen(QHostAddress("10.6.22.1"), 9999);
 
-    connect(tcpServer, SIGNAL(newConnection()), this, SLOT(mNewConnection()));
 }
 
 Server::~Server()
@@ -96,12 +107,16 @@ void Server::receiveMessage()
 
             // Forward the message to all other clients
             for (QTcpSocket *client : clients) {
+                //client->flush();
                 //QTcpSocket *client = clients[i];
                 QString message = "Username: " + username + ", IP: " + ip + ", Port: " + QString::number(port);
                 QByteArray byteArray = message.toUtf8();
                 client->write(byteArray);
                 client->flush();
-                qDebug() << "服务器向客户端:"<< client->peerAddress().toString() <<"发送添加receiver的message:"<< byteArray <<endl;
+                // 添加延迟，单位：毫秒
+                QThread::msleep(25); // 25毫秒延迟
+                qDebug() << "服务器向客户端:"<< client->peerAddress().toString()<<"端口：" << client->peerPort() <<"发送添加receiver的message:"<< byteArray <<endl;
+
             }
         }
     } else if (message.startsWith("Rereiver:")) {
@@ -132,8 +147,9 @@ void Server::receiveMessage()
             qDebug() << "User: " << usernameToFind << " IP: " << receiverip << " Port: " << receiverport;
             for (QTcpSocket *client : clients) {
                 QString message = receiverMessage;
-                if(client->peerAddress().toString() == receiverip) {
+                if(client->peerAddress().toString() == receiverip && client->peerPort() == receiverport) {
                     client->write(message.toUtf8());
+                    client->flush();
                 }
             }
 
@@ -142,16 +158,31 @@ void Server::receiveMessage()
             qDebug() << "User not found: " << usernameToFind;
         }
 
+    }else if (receivedString == "客户端列表刷新") {
+        //遍历QMap，服务器刷新显示在线的用户
+        QMap<QString, QPair<QString, quint16>>::iterator it2;
+        for (it2 = clientConnections.begin(); it2 != clientConnections.end(); ++it2)
+        {
+            tmpTcpSocket->flush();
+            QString username = it2.key();
+
+            QString message = "refresh:" + username ;
+
+            tmpTcpSocket->write(message.toUtf8());
+            tmpTcpSocket->flush();
+            qDebug() << "刷新发送的数据:" << message << endl;
+
+            // 添加延迟，单位：毫秒
+            QThread::msleep(100); // 100毫秒延迟
+        }
+
     }
 
-
-//    // Forward the message to all other clients
-//    for (QTcpSocket *client : clients) {
-//        if (client != tmpTcpSocket) {
-//            client->write(message);
-//        }
-//    }
 }
+
+
+
+
 
 void Server::disconnectClient()
 {
@@ -164,15 +195,18 @@ void Server::disconnectClient()
 
 
     QString removeUsrAddr = disconnectedSocket->peerAddress().toString();
-    // 遍历 clientConnections 并移除拥有相同IP地址的 newusername 用户
+    quint16 removePort = disconnectedSocket->peerPort();
+    // 遍历 clientConnections 并移除拥有相同IP地址及端口的 newusername 用户
     QMap<QString, QPair<QString, quint16>>::iterator it;
     for (it = clientConnections.begin(); it != clientConnections.end(); ) {
-        removeName = it.key();
+        QString tempName = it.key();
         QPair<QString, quint16> connectionInfo = it.value();
         QString ip = connectionInfo.first;
+        quint16 port = connectionInfo.second;
 
-        // 检查IP地址是否与 removeUsrAddr 相同
-        if (ip == removeUsrAddr) {
+        // 检查IP地址和端口是否与 removeUsrAddr 相同
+        if (ip == removeUsrAddr && port == removePort) {
+            removeName = tempName;
             // 移除匹配的键值对
             it = clientConnections.erase(it);
         } else {
@@ -184,20 +218,24 @@ void Server::disconnectClient()
     // 清空 QComboBox 中的所有项
     ui->comboBox->clear();
 
-    // Forward the message to all other clients
+    // 向所有连接的客户端发送删除当前退出用户的用户名的请求
     for (QTcpSocket *client : clients) {
         QString ip = removeUsrAddr;
-        quint16 port = disconnectedSocket->peerPort();
+        quint16 port = removePort;
 
         QString message = "Removename: " + removeName + ", IP: " + ip + ", Port: " + QString::number(port);
-        qDebug() << message <<endl;
+        //qDebug() << message <<endl;
         QByteArray byteArray = message.toUtf8();
         client->write(byteArray);
         client->flush();
-        qDebug() << "服务器向客户端:"<< client->peerAddress().toString() <<"发送添加receiver的message:"<< byteArray <<endl;
+        // 添加延迟，单位：毫秒
+        QThread::msleep(15); // 15毫秒延迟
+        qDebug() << "服务器向客户端:"<< client->peerAddress().toString() <<"端口："<< port <<"发送添加receiver的message:"<< byteArray <<endl;
+
+
     }
 
-    //遍历QMap
+    //遍历QMap，服务器刷新显示在线的用户
     QMap<QString, QPair<QString, quint16>>::iterator it2;
     for (it2 = clientConnections.begin(); it2 != clientConnections.end(); ++it2)
     {
@@ -219,3 +257,38 @@ void Server::disconnectClient()
 
     qDebug() << "Client disconnected. Total clients: " << clients.count();
 }
+
+void Server::on_pushButton_clicked()
+{
+
+
+    serverIpaddr = this->ui->lineEdit->text();
+    serverPort = this->ui->lineEdit_2->text();
+    quint16 port = serverPort.toUInt();
+    //listen(QHostAddress::Any, 12345); // Listen to any address on port 12345
+    tcpServer->listen(QHostAddress(serverIpaddr), port);
+
+    connect(tcpServer, SIGNAL(newConnection()), this, SLOT(mNewConnection()));
+}
+
+
+
+
+
+void Server::on_lineEdit_textChanged(const QString &arg1)
+{
+    // 当文本框内容变化时保存
+    QSettings settings("MyCompany", "MyApp");
+    QString ipaddr = ui->lineEdit->text(); // 获取输入框中的文本
+    settings.setValue("address", ipaddr);
+}
+
+
+void Server::on_lineEdit_2_textChanged(const QString &arg1)
+{
+    // 当文本框内容变化时保存
+    QSettings settings("MyCompany", "MyApp");
+    QString port = ui->lineEdit_2->text(); // 获取输入框中的文本
+    settings.setValue("port", port);
+}
+

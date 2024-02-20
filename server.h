@@ -4,7 +4,7 @@
 #include <QWidget>
 #include <QTcpServer>
 #include <QTcpSocket>
-
+#include <QSettings>
 QT_BEGIN_NAMESPACE
 namespace Ui { class Server; }
 QT_END_NAMESPACE
@@ -27,6 +27,14 @@ private slots:
     void disconnectClient();
     void mNewConnection();
 
+    void on_pushButton_clicked();
+
+    void on_pushButton_2_clicked();
+
+    void on_lineEdit_textChanged(const QString &arg1);
+
+    void on_lineEdit_2_textChanged(const QString &arg1);
+
 private:
     QTcpServer *tcpServer;
 
@@ -40,6 +48,10 @@ private:
     QString receiverMessage;
 
     QString removeName;
+
+
+    QString serverIpaddr;
+    QString serverPort;
 
     Ui::Server *ui;
 
